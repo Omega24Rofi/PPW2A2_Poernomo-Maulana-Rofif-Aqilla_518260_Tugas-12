@@ -2,122 +2,77 @@
 
 namespace App\Http\Controllers;
 
-use Illuminate\Http\Request;
-use Illuminate\Support\Facades\Storage;
-use Illuminate\Support\Facades\Auth;
-use Illuminate\Support\Facades\File;
 use App\Models\User;
-
+use Auth;
+use Exception;
+use File;
+use Illuminate\Http\Request;
 
 class UserController extends Controller
 {
-    public function index()
-    {
-        if (!Auth::check()) {
-            return redirect()->route('login')
-            ->withErrors([ 'email' => 'Please login to access the dashboard.', ])->onlyInput('email');
-            }
-            $dataUsers = User::latest()->paginate(5);
-            return view('users', compact('dataUsers'));
+    public function index(Request $request){
+        $user = $request->user();
+
+        return view('profil.index', compact('user'));
     }
-    public function store(Request $request)
-    {
-        $validatedData = $request->validate([
-            'namaUser' => 'required|string|max:250',
-            'emailUser' => 'required|email|max:250|unique:users,email',
-            'passwordUser' => 'required|min:1',
-            'password_confirmation' => 'required|same:passwordUser',
-            'isAdmin' => 'required',
-            'photo' => 'nullable|image|mimes:jpg,jpeg,png'
+    public function edit(Request $request){
+        $user = $request->user();
+
+        return view('profil.edit', compact('user'));
+    }
+    public function update(Request $request, $id){
+        $user = $request->user();
+        if($user->id != $id){
+            return redirect()->route('dashboard')->with('error', 'Anda tidak memiliki akses.');
+        }
+        $request->validate([
+            'name' => 'required|string|max:250',
+            'photo' => 'image|nullable|max:1999'
         ]);
-
-        if ($request->hasFile('photo')) {
-            $filenameWithExt = $request->file('photo')->getClientOriginalName();
-            $filename = pathinfo($filenameWithExt, PATHINFO_FILENAME);
-            $extension = $request->file('photo')->getClientOriginalExtension();
-            $filenameSimpan = $filename. '_' . time() . '.'. $extension;
-            
-            // Simpan file ke storage
-            $path = $request->file('photo')->storeAs('public/photo', $filenameSimpan);
-        }
-    
-        // Jika validasi berhasil, simpan data mahasiswa
-        $data = [
-            'name' => $validatedData['namaUser'],
-            'email' => $validatedData['emailUser'],
-            'photo' => $path,
-            'password' => $validatedData['passwordUser'],
-            'isAdmin' => $validatedData['isAdmin'],
-        ];
-    
-        
-        
-    
-        User::create($data);
-    
-        return redirect()->route('datausers.index')->with('success', 'Data user berhasil ditambahkan.');
-    }
-    
-    
-
-    public function update(Request $request, User $user)
-    {
-    
-        // Cek jika nama baru berbeda dari yang ada di database
-        if ($request->namaUser !== $user->name) {
-            $user->name = $request->namaUser;
-        }
-    
-        // Cek jika email baru berbeda dari yang ada di database
-        if ($request->emailUser !== $user->email) {
-            $user->email = $request->emailUser;
-        }
-    
-        // Cek jika ada upload foto baru
-        if ($request->hasFile('photo')) {
-
-            if ($user->photo) {
-                // Menghapus file foto lama
-                Storage::delete($user->photo);
+        if($request->hasFile('photo')){
+            $previousPhoto = public_path()."/storage/".$user->photo;
+            try {
+                if(File::exists($previousPhoto)){
+                    File::delete($previousPhoto);
+                }
+            } catch (Exception $e){
+                
             }
+            $fileNameWithExt = $request->file('photo')->getClientOriginalName();
+            $fileName = pathinfo($fileNameWithExt, PATHINFO_FILENAME);
+            $fileExt = $request->file('photo')->getClientOriginalExtension();
+            $fileNameSimpan = $fileName . "_". time() .  "." . $fileExt;
+            $path = $request->file('photo')->storeAs('photos', $fileNameSimpan); 
+        } else {
+            $path = null;
+        }
+        $userData = User::findOrFail($id);
+        $userData->name = $request->name;
+        if($path){
+            $userData->photo = $path;
+        }        
+        $userData->save();
 
-            $filenameWithExt = $request->file('photo')->getClientOriginalName();
-            $filename = pathinfo($filenameWithExt, PATHINFO_FILENAME);
-            $extension = $request->file('photo')->getClientOriginalExtension();
-            $filenameSimpan = $filename. '_' . time() . '.'. $extension;
-            
-            // Simpan file ke storage
-            $path = $request->file('photo')->storeAs('public/photo', $filenameSimpan);
-            $user->photo = $path;
-        }
-    
-    
-    
-        // Simpan perubahan hanya jika ada perubahan data
-        if ($user->isDirty()) {
-            $user->save();
-            return redirect()->route('datausers.index')->with('success', 'Data user berhasil diperbarui.');
-        }
-    
-        return redirect()->route('datausers.index')->with('info', 'Tidak ada perubahan pada data user.');
+        return redirect()->route('profil.index');
     }
-    
-
-    public function destroy(User $user)
-    {
-
-        $user = User::find($user->id);
-        $file = public_path() .'/storage/' .$user->photo;
+    public function destroy(Request $request, $id){
+        $user = $request->user();
+        if($user->id != $id){
+            return redirect()->route('dashboard')->with('error', 'Anda tidak memiliki akses.');
+        }
+        $userData = User::findOrFail($id);
+        $userPhoto = public_path() . '/storage/' .$user->photo;
         try {
-        if (File:: exists($file)) {
-            File::delete ($file);
+            if(File::exists($userPhoto)){
+                File::delete($userPhoto);
+            }
             $user->delete();
+            Auth::logout();
+            $request->session()->invalidate();
+            $request->session()->regenerateToken();
+            return redirect()->route('login')->with('success', 'You have logged out successsfully!');
+        } catch(Exception $e) {
+            return redirect()->route('dashboard')->with('error', 'Gagal menghapus akun!');
         }
-        } catch (\Throwable $th) {
-            return redirect('users')->with('error', 'Gagal hapus data');
-        }
-        $user->delete();
-
-        return redirect()->route('datausers.index')->with('success', 'Data user berhasil dihapus.');
     }
 }

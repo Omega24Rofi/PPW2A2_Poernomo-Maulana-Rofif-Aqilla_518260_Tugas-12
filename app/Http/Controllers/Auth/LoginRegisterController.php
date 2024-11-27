@@ -2,87 +2,86 @@
 
 namespace App\Http\Controllers\Auth;
 
-use App\Models\User;
-use Illuminate\Support\Facades\Auth;
-use Illuminate\Support\Facades\Hash;
 use App\Http\Controllers\Controller;
+use App\Http\Middleware\CheckAge;
+use App\Jobs\SendMailJob;
+use App\Models\User;
+use Auth;
+use Hash;
 use Illuminate\Http\Request;
-
+use Mail;
 
 class LoginRegisterController extends Controller
 {
-
-    public function register()
-    {
+    public function register(){
         return view('auth.register');
     }
-
-    public function store(Request $request)
-    {
+    public function store(Request $request){
         $request->validate([
             'name' => 'required|string|max:250',
-            'email' => 'required|email|max:250|unique:users',
-            'password' => 'required|confirmed|min:8',
-            'isAdmin' => 'required|boolean'
+            'email' => 'required|email|max:250|unique:users,email',  
+            'password' => 'required|min:8|confirmed',
+            'photo' => 'image|nullable|max:1999'
         ]);
-
+        if($request->hasFile('photo')){
+            $fileNameWithExt = $request->file('photo')->getClientOriginalName();
+            $fileName = pathinfo($fileNameWithExt, PATHINFO_FILENAME);
+            $fileExt = $request->file('photo')->getClientOriginalExtension();
+            $fileNameSimpan = $fileName . "_". time() .  "." . $fileExt;
+            $path = $request->file('photo')->storeAs('photos', $fileNameSimpan); 
+        } else {
+            $path = null;
+        }
         User::create([
             'name' => $request->name,
             'email' => $request->email,
             'password' => Hash::make($request->password),
-            'isAdmin' => $request->isAdmin
+            'photo' => $path
         ]);
 
         $credentials = $request->only('email', 'password');
         Auth::attempt($credentials);
         $request->session()->regenerate();
-        return redirect()->route('dashboard')
-            ->withSuccess('You have successfully registered & logged in!');
-    }
 
-    public function login()
-    {
+        $content = [
+            'name' => $request->name,
+            'subject' => 'Pendaftaran berhasil pada Sistem Informasi Buku PPW2',
+            'email' => $request->email,
+            'body' => ''
+        ];
+        dispatch(new SendMailJob($content, 'notifikasi_pendaftaran'));
+        return redirect()->route('books.index')->with('success', 'You have successsfully registered & logged in!');
+    }
+    public function login(){
         return view('auth.login');
     }
-
-    public function authenticate(Request $request)
-    {
-        $credentials = $request->validate([
-            'email' =>'required|email|max:250',
-            'password' => 'required|min:8'
-        ]);
-
-        if (Auth::attempt($credentials)){
-            $request->session()->regenerate();
-            return redirect()->route('dashboard')
-                ->withSuccess('You have successfully logged in!');
+    public function dashboard(){
+        if(Auth::check()){
+            return view('dashboard');
         }
-
-        return back()->withErrors(['email' => 'Invalid email or password'])->onlyInput('email');
-    }
-
-    public function dashboard()
-    {
-        if (Auth::check()) {
-            return view('auth.dashboard');
-        }
-
         return redirect()->route('login')->withErrors([
-            'email' => 'Please login t access the dashboard'
+            'email' => 'Please login to access the dashboard.'
         ])->onlyInput('email');
     }
-    public function adminpage()
-    {
-        return view('auth.adminpage');
-    }
+    public function authenticate(Request $request){
+        $credentials = $request->validate([
+            'email' => 'required|email',
+            'password' => 'required'
+        ]);
 
-    public function logout(Request $request)
-    {
+        if(Auth::attempt($credentials)){
+            $request->session()->regenerate();
+            return redirect()->route('books.index')->with('success', 'You have successsfully logged in!');
+        }
+
+        return back()->withErrors([
+            'email' => 'Your provided credentials do not match in our records.'
+        ])->onlyInput('email');
+    }
+    public function logout(Request $request){
         Auth::logout();
         $request->session()->invalidate();
         $request->session()->regenerateToken();
-        return redirect()->route('login')
-            ->withSuccess('You have successfully logged out!');
+        return redirect()->route('login')->with('success', 'You have logged out successsfully!');
     }
-
 }

@@ -1,5 +1,7 @@
 <?php
 
+use App\Http\Middleware\Admin;
+use App\Http\Middleware\CheckAge;
 use Illuminate\Foundation\Application;
 use Illuminate\Foundation\Configuration\Exceptions;
 use Illuminate\Foundation\Configuration\Middleware;
@@ -11,11 +13,9 @@ return Application::configure(basePath: dirname(__DIR__))
         health: '/up',
     )
     ->withMiddleware(function (Middleware $middleware) {
-                $middleware->alias([
-            'checkage' => \App\Http\Middleware\checkAge::class,
-        ]);
         $middleware->alias([
-            'isAdmin' => \App\Http\Middleware\Admin::class,
+            'checkage' => CheckAge::class,
+            'admin' => Admin::class
         ]);
     })
     ->withExceptions(function (Exceptions $exceptions) {
